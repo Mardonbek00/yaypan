@@ -17,11 +17,8 @@ DB_PATH = "taxi_bot.sqlite3"
 # Boshlang'ich yo'nalishlar ro'yxati (bot birinchi marta ishga tushganda bazaga yoziladi)
 # Keyinchalik directions jadvaliga to'g'ridan-to'g'ri qo'shish/o'chirish mumkin
 DEFAULT_DIRECTIONS = [
-    "O'qchi - Yaypan markazi",
-    "O'qchi - Farg'ona",
-    "O'qchi - Marg'ilon",
-    "Yaypan - Quva",
-    "Yaypan - Andijon",
+    "O'qchi - Yaypan",
+    "Yaypan - O'qchi",
 ]
 
 # Bitta zakazda qatnashuvchilar soni uchun variantlar
