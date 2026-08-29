@@ -1,4 +1,7 @@
 import logging
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram.ext import (
     Application,
@@ -31,6 +34,58 @@ from states import (
     BROADCAST_MESSAGE,
 )
 from handlers import common, passenger, driver, admin
+
+
+class _HealthCheckHandler(BaseHTTPRequestHandler):
+    """Render (va shunga o'xshash hostinglar) 'portni tinglab turibsizmi' deb
+    tekshiradi. Bot o'zi run_polling() bilan ishlagani uchun hech qanday portni
+    ochmaydi va host uni 'ishlamayapti' deb hisoblab, doim qayta ishga tushiradi
+    (aynan shu narsa 'timeout' xatosiga sabab bo'ladi). Shu oddiy server esa
+    faqat 'OK' deb javob berib, host tekshiruvini qondiradi."""
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot ishlamoqda")
+
+    def log_message(self, format, *args):
+        pass  # konsolni keraksiz loglar bilan to'ldirmaslik uchun
+
+
+def _start_health_check_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), _HealthCheckHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logging.info(f"Health-check server {port}-portda ishga tushdi")
+
+
+def _self_ping_loop():
+    """Render bepul rejasi 15 daqiqa hech qanday tashqi so'rov kelmasa,
+    servisni 'uxlatib' qo'yadi. Buning oldini olish uchun bot o'zining
+    ochiq portiga (RENDER_EXTERNAL_URL) har 10 daqiqada bir marta so'rov
+    yuborib turadi — bu Render uchun 'faol' so'rov hisoblanadi.
+    Bu rasman kafolatlangan yechim emas (Render buni rasman qo'llab-
+    quvvatlamaydi), lekin amalda ishlaydi."""
+    import time
+    import urllib.request
+
+    url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not url:
+        logging.info("RENDER_EXTERNAL_URL topilmadi — self-ping o'chirilgan (lokal ishga tushirishda normal holat)")
+        return
+
+    def _loop():
+        while True:
+            time.sleep(600)  # 10 daqiqa — 15 daqiqalik chegaradan xavfsiz kam
+            try:
+                urllib.request.urlopen(url, timeout=10)
+                logging.info("Self-ping yuborildi: %s", url)
+            except Exception as e:
+                logging.warning("Self-ping xatosi: %s", e)
+
+    threading.Thread(target=_loop, daemon=True).start()
 
 
 async def post_init(application: Application):
@@ -234,6 +289,8 @@ def main():
     app.add_handler(CallbackQueryHandler(admin.show_driver_transactions, pattern=r"^admin_driver_tx:\d+$"))
 
     print("Taxi bot ishga tushdi (python-telegram-bot)...")
+    _start_health_check_server()
+    _self_ping_loop()
     app.run_polling(drop_pending_updates=True)
 
 
