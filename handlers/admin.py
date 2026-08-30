@@ -195,7 +195,10 @@ async def queue_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Ruxsat yo'q", show_alert=True)
         return
     _, direction_id, driver_id = query.data.split(":")
-    await db.queue_move(int(driver_id), int(direction_id), -1)
+    direction_id = int(direction_id)
+    before = await matching.get_queue_snapshot(direction_id)
+    await db.queue_move(int(driver_id), direction_id, -1)
+    await matching.notify_position_changes(context, direction_id, before)
     await query.answer("Yuqoriga surildi")
 
 
@@ -205,7 +208,10 @@ async def queue_down(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Ruxsat yo'q", show_alert=True)
         return
     _, direction_id, driver_id = query.data.split(":")
-    await db.queue_move(int(driver_id), int(direction_id), 1)
+    direction_id = int(direction_id)
+    before = await matching.get_queue_snapshot(direction_id)
+    await db.queue_move(int(driver_id), direction_id, 1)
+    await matching.notify_position_changes(context, direction_id, before)
     await query.answer("Pastga surildi")
 
 
