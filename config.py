@@ -23,13 +23,17 @@ DEFAULT_DIRECTIONS = [
 
 # Bitta zakazda qatnashuvchilar soni uchun variantlar
 PASSENGER_COUNTS = [1, 2, 3, 4]
-
+ 
 # Mashinada nechta yo'lovchi sig'adi (haydovchi bir nechta zakazni birlashtirib olishi mumkin)
 CAR_CAPACITY = 4
-
+ 
 # Haydovchiga taklif qilingan zakazni qabul/rad qilish uchun berilgan vaqt (soniyada)
-OFFER_TIMEOUT_SECONDS = 60
-
+OFFER_TIMEOUT_SECONDS = 90
+ 
+# Zakaz yaratilgandan keyin hech kim qabul qilmasa, necha soniyadan keyin
+# avtomatik bekor qilinishi va mijozga xabar berilishi kerak
+ORDER_EXPIRY_SECONDS = 400
+ 
 # Tranzaksiya turlari va holatlari uchun ko'rinadigan nomlar
 TX_TYPE_LABELS = {
     "topup_request": "Balansni to'ldirish",
@@ -42,3 +46,4 @@ TX_STATUS_LABELS = {
     "completed": "✅ Amalga oshirildi",
     "rejected": "❌ Rad etildi",
 }
+ 
