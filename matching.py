@@ -26,7 +26,7 @@ from datetime import datetime, timezone, timedelta
 
 import database as db
 import keyboards as kb
-from config import CAR_CAPACITY, OFFER_TIMEOUT_SECONDS, ADMIN_IDS
+from config import CAR_CAPACITY, OFFER_TIMEOUT_SECONDS, ORDER_EXPIRY_SECONDS, ADMIN_IDS
 
 TASHKENT_TZ = timezone(timedelta(hours=5))
 
@@ -107,19 +107,31 @@ async def _schedule_expiry(context, order_id: int, driver_id: int, direction_id:
     context.application.create_task(_expire_later())
 
 
-async def _notify_queue_positions(context, direction_id: int):
-    """Navbatdagi barcha (online) haydovchilarga joriy o'rinlarini xabar qiladi."""
+async def get_queue_snapshot(direction_id: int) -> dict[int, int]:
+    """Yo'nalishdagi (online) haydovchilarning joriy o'rinlarini {driver_id: o'rin} ko'rinishida qaytaradi."""
     queue = await db.queue_list(direction_id)
-    for i, d in enumerate(queue, start=1):
-        if d["driver_status"] != "online":
+    return {
+        d["driver_id"]: i
+        for i, d in enumerate((x for x in queue if x["driver_status"] == "online"), start=1)
+    }
+
+
+async def notify_position_changes(context, direction_id: int, before: dict[int, int], exclude: set[int] | None = None):
+    """`before` bilan solishtirib, faqat o'rni HAQIQATAN o'zgargan haydovchilarga xabar yuboradi."""
+    exclude = exclude or set()
+    after = await get_queue_snapshot(direction_id)
+    for driver_id, new_pos in after.items():
+        if driver_id in exclude:
             continue
-        try:
-            await context.bot.send_message(
-                chat_id=d["driver_id"],
-                text=f"🔢 Navbatdagi joyingiz: {i}-o'rin.",
-            )
-        except Exception:
-            pass
+        old_pos = before.get(driver_id)
+        if old_pos is not None and old_pos != new_pos:
+            try:
+                await context.bot.send_message(
+                    chat_id=driver_id,
+                    text=f"🔢 Navbatdagi joyingiz o'zgardi: {old_pos}-o'rindan {new_pos}-o'ringa.",
+                )
+            except Exception:
+                pass
 
 
 async def run_matching(context, direction_id: int):
@@ -154,7 +166,10 @@ async def run_matching(context, direction_id: int):
                 o["offered_to_driver"] = None
 
     # 2) Taklif qilinmagan (yoki hozirgina bo'shagan) zakazlarni navbat
-    #    tartibida birinchi mos keluvchi (va rad etmagan) haydovchiga taklif qilamiz.
+    #    tartibida birinchi mos keluvchi (va vaqtida rad etmagan/o'tkazib
+    #    yubormagan) haydovchiga taklif qilamiz. Bir marta rad etilgan yoki
+    #    muddati o'tgan zakaz o'sha haydovchiga boshqa hech qachon qaytmaydi —
+    #    faqat yangi qo'shilgan yoki hali rad etmagan boshqa haydovchiga boradi.
     expires_at = int(time.time()) + OFFER_TIMEOUT_SECONDS
     for o in all_waiting:
         if o["offered_to_driver"] is not None:
@@ -170,22 +185,6 @@ async def run_matching(context, direction_id: int):
                 assigned_driver_id = driver_id
                 break
 
-        if assigned_driver_id is None:
-            # Hech kimga taklif qilib bo'lmadi — sabab "hamma rad etgan/o'tkazib
-            # yuborgan"mi yoki shunchaki joy yo'qmi, tekshiramiz. Agar kamida bitta
-            # haydovchiga sig'sa-yu, faqat rad etganligi sabab taklif qilinmagan
-            # bo'lsa — navbat "aylanib" qayta o'sha haydovchi(lar)ga taklif qilinadi.
-            fits_someone = any(
-                o["passenger_count"] <= driver_remaining.get(d["driver_id"], 0) for d in online_drivers
-            )
-            if fits_someone:
-                await db.clear_rejections_for_order(o["id"])
-                for d in online_drivers:
-                    driver_id = d["driver_id"]
-                    if o["passenger_count"] <= driver_remaining.get(driver_id, 0):
-                        assigned_driver_id = driver_id
-                        break
-
         if assigned_driver_id is not None:
             await db.set_order_offer(o["id"], assigned_driver_id, expires_at)
             await _schedule_expiry(context, o["id"], assigned_driver_id, direction_id)
@@ -193,12 +192,42 @@ async def run_matching(context, direction_id: int):
             await _offer_single_order(context, fresh_order, assigned_driver_id)
 
 
+async def _schedule_order_expiry(context, order_id: int, direction_id: int):
+    """Agar zakaz ORDER_EXPIRY_SECONDS ichida hech qanday haydovchi tomonidan
+    qabul qilinmasa, uni bekor qilib, mijozga xabar beradi."""
+    async def _expire_later():
+        import asyncio
+
+        await asyncio.sleep(ORDER_EXPIRY_SECONDS)
+        order = await db.get_order(order_id)
+        if not order or order["status"] != "kutilmoqda":
+            return  # allaqachon qabul qilingan yoki boshqa sababda yopilgan
+
+        if order["offered_to_driver"]:
+            await _close_offer_message(context, order, order["offered_to_driver"], "Zakaz muddati tugagani uchun bekor qilindi.")
+            await db.clear_order_offer(order_id)
+
+        await db.set_order_status(order_id, "bekor_qilingan")
+        try:
+            await context.bot.send_message(
+                chat_id=order["client_id"],
+                text=f"❌ Zakazingiz (№{order_id}) bekor qilindi — hozirda haydovchilar yo'q. "
+                "Iltimos, qaytadan buyurtma bering.",
+            )
+        except Exception:
+            pass
+
+    context.application.create_task(_expire_later())
+
+
 async def new_order_created(context, order_id: int, direction_id: int):
     await run_matching(context, direction_id)
+    await _schedule_order_expiry(context, order_id, direction_id)
 
 
 async def driver_goes_online(context, driver_id: int, direction_id: int):
     user = await db.get_user(driver_id)
+    before = await get_queue_snapshot(direction_id)
     await db.update_user(driver_id, driver_status="online", current_seats=0)
     await db.queue_join(driver_id, direction_id, bool(user and user["is_vip"]))
     position = await db.queue_position(driver_id, direction_id)
@@ -207,6 +236,8 @@ async def driver_goes_online(context, driver_id: int, direction_id: int):
             await context.bot.send_message(chat_id=driver_id, text=f"🔢 Navbatdagi joyingiz: {position}-o'rin.")
         except Exception:
             pass
+    # VIP boshiga qo'yilganda, undan keyingi haydovchilarning o'rni siljigan bo'lishi mumkin
+    await notify_position_changes(context, direction_id, before, exclude={driver_id})
     await run_matching(context, direction_id)
 
 
@@ -218,10 +249,11 @@ async def driver_goes_offline(context, driver_id: int, direction_id: int | None 
     for o in offered:
         await _close_offer_message(context, o, driver_id, "Haydovchi liniyadan chiqdi.")
         await db.clear_order_offer(o["id"])
+    before = await get_queue_snapshot(direction_id) if direction_id is not None else {}
     await db.update_user(driver_id, driver_status="offline")
     await db.queue_leave(driver_id, direction_id)
     if direction_id is not None:
-        await _notify_queue_positions(context, direction_id)
+        await notify_position_changes(context, direction_id, before)
         await run_matching(context, direction_id)
 
 
@@ -272,6 +304,7 @@ async def driver_accepts_order(context, driver_id: int, order_id: int):
 
     if new_seats >= CAR_CAPACITY:
         # mashina to'ldi -> avtomatik jo'naydi
+        before = await get_queue_snapshot(direction_id)
         await db.queue_leave(driver_id, direction_id)
         await db.update_user(driver_id, driver_status="busy")
         driver_after = await db.get_user(driver_id)
@@ -284,7 +317,7 @@ async def driver_accepts_order(context, driver_id: int, order_id: int):
             )
         except Exception:
             pass
-        await _notify_queue_positions(context, direction_id)
+        await notify_position_changes(context, direction_id, before)
     else:
         driver_after = await db.get_user(driver_id)
         balance_line = f"\n💰 Balansdan {order_fee:,} so'm yechildi. Joriy balans: {driver_after['balance']:,} so'm.".replace(",", " ") if order_fee > 0 else ""
@@ -327,11 +360,12 @@ async def driver_departs(context, driver_id: int):
         await _close_offer_message(context, o, driver_id, "Haydovchi yo'lga chiqdi.")
         await db.clear_order_offer(o["id"])
 
+    before = await get_queue_snapshot(direction_id) if direction_id is not None else {}
     await db.queue_leave(driver_id, direction_id)
     await db.update_user(driver_id, driver_status="busy")
 
     if direction_id is not None:
-        await _notify_queue_positions(context, direction_id)
+        await notify_position_changes(context, direction_id, before)
         await run_matching(context, direction_id)
     return True
 
