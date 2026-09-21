@@ -3,7 +3,7 @@ import os
 # === SOZLAMALAR ===
 
 # BotFather'dan olingan token shu yerga yoziladi (yoki muhit o'zgaruvchisi orqali)
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8281987957:AAGlSt9nmSs_Stk-6-H_qR4EuWAr2d1qBzQ")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8281987957:AAEciTWYvwx7unbqav5UaAajQ43miCAUukA")
 
 # Admin(lar)ning Telegram ID raqamlari (bir nechta bo'lishi mumkin)
 # Telegram ID ni bilish uchun @userinfobot ga yozing
