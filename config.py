@@ -8,7 +8,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8281987957:AAFQ6RFd5X8_Pwhb9SPmepsm8fba1tgku
 # Admin(lar)ning Telegram ID raqamlari (bir nechta bo'lishi mumkin)
 # Telegram ID ni bilish uchun @userinfobot ga yozing
 ADMIN_IDS = [
-    5821724830,  # <-- shu yerga o'z Telegram ID raqamingizni yozing
+   # 5821724830,  # <-- shu yerga o'z Telegram ID raqamingizni yozing
 ]
 
 # Ma'lumotlar bazasi fayli
