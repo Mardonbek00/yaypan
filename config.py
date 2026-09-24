@@ -8,7 +8,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8281987957:AAFQ6RFd5X8_Pwhb9SPmepsm8fba1tgku
 # Admin(lar)ning Telegram ID raqamlari (bir nechta bo'lishi mumkin)
 # Telegram ID ni bilish uchun @userinfobot ga yozing
 ADMIN_IDS = [
-   # 5821724830,  # <-- shu yerga o'z Telegram ID raqamingizni yozing
+    5821724830,  # <-- shu yerga o'z Telegram ID raqamingizni yozing
 ]
 
 # Ma'lumotlar bazasi fayli
@@ -18,7 +18,8 @@ DB_PATH = "taxi_bot.sqlite3"
 # Keyinchalik directions jadvaliga to'g'ridan-to'g'ri qo'shish/o'chirish mumkin
 DEFAULT_DIRECTIONS = [
     "O'qchi - Yaypan",
-    "Yaypan - O'qchi",
+    "Yaypan - O'qchi"
+    "qo'qon",
 ]
 
 # Bitta zakazda qatnashuvchilar soni uchun variantlar
