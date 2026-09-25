@@ -19,7 +19,6 @@ DB_PATH = "taxi_bot.sqlite3"
 DEFAULT_DIRECTIONS = [
     "O'qchi - Yaypan",
     "Yaypan - O'qchi"
-    "qo'qon",
 ]
 
 # Bitta zakazda qatnashuvchilar soni uchun variantlar
